@@ -1,0 +1,51 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Capacitor
+        run: |
+          mkdir www && cp index.html www/
+          npm init -y
+          npm i @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 @capacitor/local-notifications@7 @capacitor/geolocation@7
+          npx cap init Muslim com.muslim.app --web-dir=www
+          npx cap add android
+          npx cap sync android
+      - name: Adhan, icons, permissions
+        run: |
+          sudo apt-get install -y imagemagick
+          RES=android/app/src/main/res
+          mkdir -p $RES/raw && cp adhan.mp3 $RES/raw/
+          find $RES -name "ic_launcher*.webp" -delete
+          for p in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
+            IFS=: read d s f <<< "$p"
+            i=$((f*62/100))
+            mkdir -p $RES/mipmap-$d
+            convert icon.png -resize ${s}x${s} $RES/mipmap-$d/ic_launcher.png
+            cp $RES/mipmap-$d/ic_launcher.png $RES/mipmap-$d/ic_launcher_round.png
+            convert icon.png -resize ${i}x${i} -background none -gravity center -extent ${f}x${f} $RES/mipmap-$d/ic_launcher_foreground.png
+          done
+          for p in mdpi:24 hdpi:36 xhdpi:48 xxhdpi:72 xxxhdpi:96; do
+            IFS=: read d s <<< "$p"
+            mkdir -p $RES/drawable-$d
+            convert notif.png -resize ${s}x${s} $RES/drawable-$d/ic_stat_muslim.png
+          done
+          sed -i 's|<application|<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/><uses-permission android:name="android.permission.USE_EXACT_ALARM"/><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/><uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/><application|' android/app/src/main/AndroidManifest.xml
+      - name: Build APK
+        run: |
+          cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Muslim-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
